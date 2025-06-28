@@ -10,12 +10,17 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import uuid
 import json
+import os
+from llama_api_client import LlamaAPIClient
 
 app = FastAPI(
     title="AI Vision API",
     description="API for image reasoning and analysis",
     version="1.0.0"
 )
+
+# Initialize LlamaAPI client
+client = LlamaAPIClient()
 
 # Add CORS middleware to allow frontend requests
 app.add_middleware(
@@ -114,20 +119,54 @@ def process_base64_image(image_data: str) -> Image.Image:
 
 def query_llm(image: Image.Image, user_message: str = None) -> str:
     """Query the LLM with the processed image and return response"""
-    # Get basic image information
-    width, height = image.size
-    format_type = image.format or "UNKNOWN"
-    
-    # TODO: Replace this with actual LLM integration (LangGraph, OpenAI, etc.)
-    # For now, return a placeholder response
-    response = f"I can see this is a {format_type} image with dimensions {width}x{height}."
-    
-    if user_message:
-        response += f" Regarding your question '{user_message}': This is where the LLM would provide detailed analysis based on the image content."
-    else:
-        response += " This image has been successfully processed and analyzed."
-    
-    return response
+    try:
+        # Convert PIL Image back to base64 for the API call
+        buffer = io.BytesIO()
+        image.save(buffer, format='JPEG')
+        img_base64 = base64.b64encode(buffer.getvalue()).decode()
+        img_data_url = f"data:image/jpeg;base64,{img_base64}"
+        
+        # Prepare the messages for the API call
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that understands the image given to you and helps vision-impaired people navigate their environment."
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": user_message if user_message else "Please describe this image and provide navigation guidance for a vision-impaired person."
+                    },
+                    {
+                        "type": "image",
+                        "image": img_base64
+                    }
+                ]
+            }
+        ]
+        
+        # Make the API call
+        response = client.chat.completions.create(
+            messages=messages,
+            model="Llama-4-Scout-17B-16E-Instruct-FP8",
+            stream=False,
+            temperature=0.5,
+            max_completion_tokens=2048,
+            top_p=0.9,
+            repetition_penalty=1,
+            tools=[],
+        )
+        
+        # Extract the response content
+        return response.choices[0].message.content
+        
+    except Exception as e:
+        # Fallback to basic image information if API call fails
+        width, height = image.size
+        format_type = image.format or "UNKNOWN"
+        return f"Error calling LLM API: {str(e)}. Basic info: {format_type} image with dimensions {width}x{height}."
 
 @app.post("/analyze", response_model=ImageAnalysisResponse)
 async def analyze_image(image: str):
