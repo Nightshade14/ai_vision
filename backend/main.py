@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Header
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Header, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -11,7 +11,11 @@ from datetime import datetime
 import uuid
 import json
 import os
+from dotenv import load_dotenv
 from llama_api_client import LlamaAPIClient
+
+# Load environment variables from .env file
+load_dotenv("backend/.env")
 
 app = FastAPI(
     title="AI Vision API",
@@ -20,7 +24,7 @@ app = FastAPI(
 )
 
 # Initialize LlamaAPI client
-client = LlamaAPIClient()
+client = LlamaAPIClient(api_key=os.getenv("LLAMA_API_KEY"))
 
 # Add CORS middleware to allow frontend requests
 app.add_middleware(
@@ -54,6 +58,10 @@ class ChatHistoryResponse(BaseModel):
 
 class UserCreateRequest(BaseModel):
     user_name: Optional[str] = None
+
+class ImageAnalysisRequest(BaseModel):
+    image: str  # Base64 encoded image
+    message: Optional[str] = None  # Optional user message
 
 class ImageAnalysisResponse(BaseModel):
     response: str  # Only the LLM text response
@@ -169,10 +177,10 @@ def query_llm(image: Image.Image, user_message: str = None) -> str:
         return f"Error calling LLM API: {str(e)}. Basic info: {format_type} image with dimensions {width}x{height}."
 
 @app.post("/analyze", response_model=ImageAnalysisResponse)
-async def analyze_image(image: str):
+async def analyze_image(request: ImageAnalysisRequest):
     """
     Main endpoint that handles image analysis and LLM querying.
-    Accepts only base64 encoded image data.
+    Accepts base64 encoded image data and optional user message.
     """
     try:
         # Generate a new user ID for each request (since we're not tracking users)
@@ -180,16 +188,16 @@ async def analyze_image(image: str):
         chat_history[user_id] = []
         
         # Process the image
-        processed_image = process_base64_image(image)
+        processed_image = process_base64_image(request.image)
         
-        # Query the LLM (without user message since we're only accepting image)
-        llm_response = query_llm(processed_image)
+        # Query the LLM with the image and user message
+        llm_response = query_llm(processed_image, request.message)
         
         # Add image message to chat history
         add_message_to_history(
             user_id=user_id,
             message_type="image",
-            content="Uploaded image for analysis",
+            content=request.message if request.message else "Uploaded image for analysis",
             image_data=None,  # Don't store full image data
             analysis={"width": processed_image.size[0], "height": processed_image.size[1], "format": processed_image.format}
         )
