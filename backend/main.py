@@ -50,12 +50,6 @@ class ChatHistoryResponse(BaseModel):
 class UserCreateRequest(BaseModel):
     user_name: Optional[str] = None
 
-class ImageAnalysisRequest(BaseModel):
-    image: str  # Base64 encoded image with data URL prefix
-    filename: Optional[str] = None
-    user_message: Optional[str] = None
-    user_id: Optional[str] = None
-
 class ImageAnalysisResponse(BaseModel):
     response: str  # Only the LLM text response
 
@@ -136,39 +130,29 @@ def query_llm(image: Image.Image, user_message: str = None) -> str:
     return response
 
 @app.post("/analyze", response_model=ImageAnalysisResponse)
-async def analyze_image(request: ImageAnalysisRequest):
+async def analyze_image(image: str):
     """
     Main endpoint that handles image analysis and LLM querying.
-    Manages chat history and returns only the LLM response text.
+    Accepts only base64 encoded image data.
     """
     try:
-        # Get or create user ID
-        user_id = request.user_id
-        if not user_id or user_id not in chat_history:
-            user_id = str(uuid.uuid4())
-            chat_history[user_id] = []
+        # Generate a new user ID for each request (since we're not tracking users)
+        user_id = str(uuid.uuid4())
+        chat_history[user_id] = []
         
         # Process the image
-        image = process_base64_image(request.image)
+        processed_image = process_base64_image(image)
         
-        # Query the LLM
-        llm_response = query_llm(image, request.user_message)
-        
-        # Add user message to chat history if provided
-        if request.user_message:
-            add_message_to_history(
-                user_id=user_id,
-                message_type="text",
-                content=request.user_message
-            )
+        # Query the LLM (without user message since we're only accepting image)
+        llm_response = query_llm(processed_image)
         
         # Add image message to chat history
         add_message_to_history(
             user_id=user_id,
             message_type="image",
-            content=f"Uploaded image: {request.filename or 'unknown.jpg'}",
+            content="Uploaded image for analysis",
             image_data=None,  # Don't store full image data
-            analysis={"width": image.size[0], "height": image.size[1], "format": image.format}
+            analysis={"width": processed_image.size[0], "height": processed_image.size[1], "format": processed_image.format}
         )
         
         # Add LLM response to chat history
