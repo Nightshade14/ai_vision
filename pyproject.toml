@@ -17,4 +17,5 @@ dependencies = [
     "langchain-community>=0.0.20",
     "langsmith>=0.0.80",
     "llama-api-client>=0.1.2",
+    "streamlit>=1.46.1",
 ]
