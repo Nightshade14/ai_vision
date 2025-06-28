@@ -1,5 +1,6 @@
 
 import { useState, useCallback, useRef } from 'react';
+import { sendImageAnalysis, sendVoiceCommand } from '../services/navigationApi';
 
 interface NavigationState {
   isProcessing: boolean;
@@ -8,6 +9,7 @@ interface NavigationState {
   guidance: string;
   lastCommand: string;
   conversationHistory: Array<{ role: 'user' | 'assistant', content: string, image?: string }>;
+  currentImageData?: string;
 }
 
 export const useNavigationAssistant = () => {
@@ -17,7 +19,8 @@ export const useNavigationAssistant = () => {
     visualContext: '',
     guidance: '',
     lastCommand: '',
-    conversationHistory: []
+    conversationHistory: [],
+    currentImageData: undefined
   });
 
   const processingTimeoutRef = useRef<NodeJS.Timeout>();
@@ -25,37 +28,52 @@ export const useNavigationAssistant = () => {
   const processFrame = useCallback(async (imageData: string) => {
     if (state.isPaused) return;
 
-    setState(prev => ({ ...prev, isProcessing: true }));
+    // Store the current image data for voice commands
+    setState(prev => ({ 
+      ...prev, 
+      currentImageData: imageData,
+      isProcessing: true 
+    }));
 
-    // Simulate LLM processing delay
+    // Clear any existing timeout
     if (processingTimeoutRef.current) {
       clearTimeout(processingTimeoutRef.current);
     }
 
-    processingTimeoutRef.current = setTimeout(() => {
-      // Mock visual analysis responses
-      const visualAnalyses = [
-        "I can see subway platform signs indicating Uptown and Downtown directions. There are stairs on the left and an elevator entrance on the right.",
-        "This appears to be a subway station entrance with multiple train line indicators (R, N, Q, W trains). Direction signs point left for Uptown service.",
-        "I observe a subway platform with train arrival displays. The platform extends in both directions with clear signage for different train lines.",
-        "There are accessibility features visible: elevator access and tactile guidance strips. Multiple platform options are available.",
-        "I can see subway turnstiles and fare gates ahead. Direction signs indicate platform access through the corridor on the right."
-      ];
+    try {
+      const response = await sendImageAnalysis(imageData, state.conversationHistory);
+      
+      if (response.error) {
+        console.error('API Error:', response.error);
+        setState(prev => ({
+          ...prev,
+          isProcessing: false,
+          visualContext: `Error: ${response.error}`
+        }));
+        return;
+      }
 
-      const randomAnalysis = visualAnalyses[Math.floor(Math.random() * visualAnalyses.length)];
-
+      const newVisualContext = response.visual_context || '';
+      
       setState(prev => ({
         ...prev,
         isProcessing: false,
-        visualContext: randomAnalysis,
+        visualContext: newVisualContext,
         conversationHistory: [
           ...prev.conversationHistory,
           { role: 'user', content: 'Visual context', image: imageData },
-          { role: 'assistant', content: randomAnalysis }
+          { role: 'assistant', content: newVisualContext }
         ]
       }));
-    }, 1500);
-  }, [state.isPaused]);
+    } catch (error) {
+      console.error('Error processing frame:', error);
+      setState(prev => ({
+        ...prev,
+        isProcessing: false,
+        visualContext: 'Error processing image. Please check your connection to the backend.'
+      }));
+    }
+  }, [state.isPaused, state.conversationHistory]);
 
   const processVoiceCommand = useCallback(async (command: string) => {
     setState(prev => ({
@@ -65,30 +83,46 @@ export const useNavigationAssistant = () => {
       isProcessing: true
     }));
 
-    // Simulate LLM processing the voice command with visual context
-    setTimeout(() => {
-      const guidanceResponses = [
-        "Based on what I can see, turn left toward the uptown platform. The R train platform should be accessible via the stairs on your left.",
-        "I can see the downtown platform signs. Walk straight ahead and then turn right. The elevator is available if you prefer accessible access.",
-        "From your current position, the N train platform is through the corridor on your right. Look for the blue line indicators on the floor.",
-        "I notice the transfer signs above. To reach your connecting train, follow the green directional signs and take the escalator down one level.",
-        "The exit you're looking for is behind you and to the left. You'll see the street level indicators and 'Exit' signs clearly marked."
-      ];
+    try {
+      const response = await sendVoiceCommand(
+        command, 
+        state.currentImageData, 
+        state.conversationHistory
+      );
+      
+      if (response.error) {
+        console.error('API Error:', response.error);
+        setState(prev => ({
+          ...prev,
+          isProcessing: false,
+          guidance: `Error: ${response.error}`
+        }));
+        return;
+      }
 
-      const randomGuidance = guidanceResponses[Math.floor(Math.random() * guidanceResponses.length)];
+      const newGuidance = response.guidance || '';
+      const newVisualContext = response.visual_context || state.visualContext;
 
       setState(prev => ({
         ...prev,
         isProcessing: false,
-        guidance: randomGuidance,
+        guidance: newGuidance,
+        visualContext: newVisualContext,
         conversationHistory: [
           ...prev.conversationHistory,
           { role: 'user', content: command },
-          { role: 'assistant', content: randomGuidance }
+          { role: 'assistant', content: newGuidance }
         ]
       }));
-    }, 2000);
-  }, []);
+    } catch (error) {
+      console.error('Error processing voice command:', error);
+      setState(prev => ({
+        ...prev,
+        isProcessing: false,
+        guidance: 'Error processing voice command. Please check your connection to the backend.'
+      }));
+    }
+  }, [state.currentImageData, state.conversationHistory, state.visualContext]);
 
   const setVoiceListening = useCallback((listening: boolean) => {
     setState(prev => ({ 

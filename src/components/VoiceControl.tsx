@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Mic, MicOff } from 'lucide-react';
 
 interface VoiceControlProps {
@@ -14,65 +14,57 @@ const VoiceControl: React.FC<VoiceControlProps> = ({
   onListeningChange 
 }) => {
   const [isRecording, setIsRecording] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
+  useEffect(() => {
+    // Check if browser supports speech recognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (SpeechRecognition) {
+      const recognitionInstance = new SpeechRecognition();
+      recognitionInstance.continuous = false;
+      recognitionInstance.interimResults = false;
+      recognitionInstance.lang = 'en-US';
 
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
+      recognitionInstance.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        console.log('Speech recognized:', transcript);
+        onVoiceCommand(transcript);
       };
 
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        
-        // Simulate speech-to-text processing
-        // In a real app, you'd send this to a speech recognition service
-        await processAudio(audioBlob);
-        
-        stream.getTracks().forEach(track => track.stop());
+      recognitionInstance.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsRecording(false);
+        onListeningChange(false);
       };
 
-      mediaRecorder.start();
-      setIsRecording(true);
-      onListeningChange(true);
-    } catch (error) {
-      console.error('Failed to start recording:', error);
+      recognitionInstance.onend = () => {
+        setIsRecording(false);
+        onListeningChange(false);
+      };
+
+      setRecognition(recognitionInstance);
+    } else {
+      console.warn('Speech recognition not supported in this browser');
+    }
+  }, [onVoiceCommand, onListeningChange]);
+
+  const startRecording = () => {
+    if (recognition) {
+      try {
+        recognition.start();
+        setIsRecording(true);
+        onListeningChange(true);
+      } catch (error) {
+        console.error('Failed to start speech recognition:', error);
+      }
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      onListeningChange(false);
+    if (recognition && isRecording) {
+      recognition.stop();
     }
-  };
-
-  const processAudio = async (audioBlob: Blob) => {
-    // Simulate speech-to-text processing
-    // In a real implementation, you'd use Web Speech API or send to a service
-    
-    // Mock responses for demo purposes
-    const mockCommands = [
-      "I want to go uptown on the R train",
-      "How do I get to the downtown platform?",
-      "Where is the elevator?",
-      "I need to transfer to the N train",
-      "Which way to the exit?"
-    ];
-    
-    const randomCommand = mockCommands[Math.floor(Math.random() * mockCommands.length)];
-    
-    // Simulate processing delay
-    setTimeout(() => {
-      onVoiceCommand(randomCommand);
-    }, 1000);
   };
 
   const handleMouseDown = () => {
@@ -123,6 +115,9 @@ const VoiceControl: React.FC<VoiceControlProps> = ({
         </p>
         {isListening && !isRecording && (
           <p className="text-xs text-blue-600 mt-1">Processing your request...</p>
+        )}
+        {!recognition && (
+          <p className="text-xs text-red-600 mt-1">Speech recognition not supported</p>
         )}
       </div>
     </div>
