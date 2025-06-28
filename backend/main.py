@@ -1,21 +1,20 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Header, Body
+from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-import uvicorn
-from PIL import Image
-import io
-import base64
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from PIL import Image
+import base64
+import io
 import uuid
 import json
 import os
-from dotenv import load_dotenv
 from llama_api_client import LlamaAPIClient
+import dotenv
 
 # Load environment variables from .env file
-load_dotenv("backend/.env")
+dotenv.load_dotenv("backend/.env")
 
 app = FastAPI(
     title="AI Vision API",
@@ -29,60 +28,50 @@ client = LlamaAPIClient(api_key=os.getenv("LLAMA_API_KEY"))
 # Add CORS middleware to allow frontend requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend URL
+    allow_origins=["*"],  # Adjust to your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Supported image formats
+# Supported formats
 SUPPORTED_FORMATS = {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/bmp", "image/webp"}
 
-# In-memory storage for chat history (in production, use a database)
+# In-memory history (replace with DB in production)
 chat_history: Dict[str, List[Dict[str, Any]]] = {}
 
-# Pydantic models for request/response
-class ChatMessage(BaseModel):
-    message_id: str
-    user_id: str
-    message_type: str  # "image", "text", "response"
-    content: str
-    image_data: Optional[str] = None
-    timestamp: datetime
-    analysis: Optional[Dict[str, Any]] = None
-
-class ChatHistoryResponse(BaseModel):
-    user_id: str
-    messages: List[ChatMessage]
-    total_messages: int
-
-class UserCreateRequest(BaseModel):
-    user_name: Optional[str] = None
-
-class ImageAnalysisRequest(BaseModel):
-    image: str  # Base64 encoded image
-    message: Optional[str] = None  # Optional user message
-
+# Response model
 class ImageAnalysisResponse(BaseModel):
-    response: str  # Only the LLM text response
+    response: str
 
-def get_or_create_user_id(user_id: Optional[str] = Header(None, alias="X-User-ID")) -> str:
-    """Get user ID from header or create a new one"""
-    if user_id and user_id in chat_history:
-        return user_id
-    
-    # Create new user ID
-    new_user_id = str(uuid.uuid4())
-    chat_history[new_user_id] = []
-    return new_user_id
+@app.get("/")
+async def root():
+    return {"message": "AI Vision API is running", "status": "healthy"}
 
-def add_message_to_history(user_id: str, message_type: str, content: str, 
-                          image_data: Optional[str] = None, 
-                          analysis: Optional[Dict[str, Any]] = None) -> str:
-    """Add a message to user's chat history"""
-    message_id = str(uuid.uuid4())
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "AI Vision API"}
+
+def process_base64_image(image_data: str) -> Image.Image:
+    """Convert base64 string to a PIL image."""
+    try:
+        if image_data.startswith("data:"):
+            _, encoded = image_data.split(",", 1)
+        else:
+            encoded = image_data
+        image_bytes = base64.b64decode(encoded)
+        image = Image.open(io.BytesIO(image_bytes))
+        image.verify()
+        return Image.open(io.BytesIO(image_bytes))  # Reopen for usage
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid image data")
+
+def add_message_to_history(user_id: str, message_type: str, content: str,
+                           image_data: Optional[str] = None,
+                           analysis: Optional[Dict[str, Any]] = None):
+    msg_id = str(uuid.uuid4())
     message = {
-        "message_id": message_id,
+        "message_id": msg_id,
         "user_id": user_id,
         "message_type": message_type,
         "content": content,
@@ -95,7 +84,7 @@ def add_message_to_history(user_id: str, message_type: str, content: str,
         chat_history[user_id] = []
     
     chat_history[user_id].append(message)
-    return message_id
+    return msg_id
 
 @app.get("/")
 async def root():
@@ -148,8 +137,10 @@ def query_llm(image: Image.Image, user_message: str = None) -> str:
                         "text": user_message if user_message else "Please describe this image and provide navigation guidance for a vision-impaired person."
                     },
                     {
-                        "type": "image",
-                        "image": img_base64
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{img_base64}"
+                        }
                     }
                 ]
             }
@@ -167,8 +158,9 @@ def query_llm(image: Image.Image, user_message: str = None) -> str:
             tools=[],
         )
         
-        # Extract the response content
-        return response.choices[0].message.content
+        print(f"LLM Response: {response}")
+        # Extract the response content from the LlamaAPI response structure
+        return response.completion_message.content.text
         
     except Exception as e:
         # Fallback to basic image information if API call fails
@@ -177,58 +169,44 @@ def query_llm(image: Image.Image, user_message: str = None) -> str:
         return f"Error calling LLM API: {str(e)}. Basic info: {format_type} image with dimensions {width}x{height}."
 
 @app.post("/analyze", response_model=ImageAnalysisResponse)
-async def analyze_image(request: ImageAnalysisRequest):
-    """
-    Main endpoint that handles image analysis and LLM querying.
-    Accepts base64 encoded image data and optional user message.
-    """
+async def analyze_image(request: Request):
     try:
-        # Generate a new user ID for each request (since we're not tracking users)
-        user_id = str(uuid.uuid4())
-        chat_history[user_id] = []
-        
-        # Process the image
-        processed_image = process_base64_image(request.image)
-        
-        # Query the LLM with the image and user message
-        llm_response = query_llm(processed_image, request.message)
-        
-        # Add image message to chat history
+        data = await request.json()
+        image_data = data.get("image")
+        user_message = data.get("user_message", "")
+        user_id = data.get("user_id", str(uuid.uuid4()))
+
+        if not image_data:
+            raise HTTPException(status_code=400, detail="Missing 'image' field")
+
+        processed_image = process_base64_image(image_data)
+        response_text = query_llm(processed_image, user_message)
+
         add_message_to_history(
             user_id=user_id,
             message_type="image",
-            content=request.message if request.message else "Uploaded image for analysis",
-            image_data=None,  # Don't store full image data
-            analysis={"width": processed_image.size[0], "height": processed_image.size[1], "format": processed_image.format}
+            content="User uploaded image",
+            image_data=None,
+            analysis={
+                "width": processed_image.size[0],
+                "height": processed_image.size[1],
+                "format": processed_image.format
+            }
         )
-        
-        # Add LLM response to chat history
+
         add_message_to_history(
             user_id=user_id,
             message_type="response",
-            content=llm_response
+            content=response_text
         )
-        
-        return ImageAnalysisResponse(response=llm_response)
-        
+
+        return ImageAnalysisResponse(response=response_text)
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "service": "AI Vision API"}
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
