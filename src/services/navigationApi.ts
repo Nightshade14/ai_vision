@@ -1,5 +1,5 @@
 
-const API_BASE_URL = 'http://localhost:8000'; // Update this to your Python backend URL
+const API_BASE_URL = 'http://localhost:8000';
 
 export interface NavigationRequest {
   image?: string;
@@ -17,7 +17,7 @@ export const sendNavigationRequest = async (request: NavigationRequest): Promise
   try {
     console.log('Sending request to backend:', { ...request, image: request.image ? '[IMAGE_DATA]' : undefined });
     
-    const response = await fetch(`${API_BASE_URL}/navigate`, {
+    const response = await fetch(`${API_BASE_URL}/analyze`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

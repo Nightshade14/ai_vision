@@ -1,5 +1,4 @@
-
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mic, MicOff } from 'lucide-react';
 
 interface VoiceControlProps {
@@ -8,56 +7,61 @@ interface VoiceControlProps {
   onListeningChange: (listening: boolean) => void;
 }
 
-const VoiceControl: React.FC<VoiceControlProps> = ({ 
-  onVoiceCommand, 
-  isListening, 
-  onListeningChange 
+const VoiceControl: React.FC<VoiceControlProps> = ({
+  onVoiceCommand,
+  isListening,
+  onListeningChange
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
 
   useEffect(() => {
-    // Check if browser supports speech recognition
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
-    if (SpeechRecognition) {
-      const recognitionInstance = new SpeechRecognition();
-      recognitionInstance.continuous = false;
-      recognitionInstance.interimResults = false;
-      recognitionInstance.lang = 'en-US';
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-      recognitionInstance.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        console.log('Speech recognized:', transcript);
-        onVoiceCommand(transcript);
-      };
-
-      recognitionInstance.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        setIsRecording(false);
-        onListeningChange(false);
-      };
-
-      recognitionInstance.onend = () => {
-        setIsRecording(false);
-        onListeningChange(false);
-      };
-
-      setRecognition(recognitionInstance);
-    } else {
-      console.warn('Speech recognition not supported in this browser');
+    if (!SpeechRecognition) {
+      console.warn('Speech recognition not supported in this browser.');
+      return;
     }
+
+    const recognitionInstance = new SpeechRecognition();
+    recognitionInstance.continuous = false;
+    recognitionInstance.interimResults = false;
+    recognitionInstance.lang = 'en-US';
+
+    recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0][0].transcript;
+      console.log('Speech recognized:', transcript);
+      onVoiceCommand(transcript);
+    };
+
+    recognitionInstance.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.error('Speech recognition error:', event.error);
+      stopRecording();
+    };
+
+    recognitionInstance.onend = () => {
+      console.log('Speech recognition ended.');
+      setIsRecording(false);
+      onListeningChange(false);
+    };
+
+    setRecognition(recognitionInstance);
   }, [onVoiceCommand, onListeningChange]);
 
   const startRecording = () => {
-    if (recognition) {
-      try {
-        recognition.start();
-        setIsRecording(true);
-        onListeningChange(true);
-      } catch (error) {
-        console.error('Failed to start speech recognition:', error);
-      }
+    if (!recognition) {
+      console.error('Speech recognition not initialized.');
+      return;
+    }
+
+    try {
+      recognition.start();
+      console.log('Speech recognition started.');
+      setIsRecording(true);
+      onListeningChange(true);
+    } catch (error) {
+      console.error('Failed to start speech recognition:', error);
     }
   };
 
@@ -67,13 +71,8 @@ const VoiceControl: React.FC<VoiceControlProps> = ({
     }
   };
 
-  const handleMouseDown = () => {
-    startRecording();
-  };
-
-  const handleMouseUp = () => {
-    stopRecording();
-  };
+  const handleMouseDown = () => startRecording();
+  const handleMouseUp = () => stopRecording();
 
   const handleTouchStart = (e: React.TouchEvent) => {
     e.preventDefault();
@@ -95,20 +94,12 @@ const VoiceControl: React.FC<VoiceControlProps> = ({
         className={`
           w-24 h-24 rounded-full flex items-center justify-center text-white font-bold text-lg
           transition-all duration-200 transform active:scale-95 shadow-lg
-          ${isRecording 
-            ? 'bg-red-600 hover:bg-red-700 animate-pulse' 
-            : 'bg-blue-600 hover:bg-blue-700'
-          }
+          ${isRecording ? 'bg-red-600 hover:bg-red-700 animate-pulse' : 'bg-blue-600 hover:bg-blue-700'}
         `}
-        disabled={isListening && !isRecording}
       >
-        {isRecording ? (
-          <MicOff className="w-8 h-8" />
-        ) : (
-          <Mic className="w-8 h-8" />
-        )}
+        {isRecording ? <MicOff className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
       </button>
-      
+
       <div className="text-center">
         <p className="text-sm font-medium text-gray-700">
           {isRecording ? 'Release to send' : 'Hold to speak'}
