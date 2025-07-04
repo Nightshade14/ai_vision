@@ -1,4 +1,4 @@
-# 🦙👁️ Llama Astra - Your AI-Powered Vision Assistant
+# 🦙👁️ Metro Vision - Your AI-Powered Vision Assistant to navigate NYC
 
 <div align="center">
 
@@ -19,7 +19,7 @@
 
 Llama Astra is a revolutionary **Progressive Web App (PWA)** that transforms your smartphone into an intelligent visual assistant. Inspired by Google's Project Astra, our mission is to democratize AI-powered vision assistance, making the world more accessible and understandable for everyone—especially those with visual impairments.
 
-### 🎯 Why Llama Astra?
+### 🎯 Why Metro Vision?
 
 - **🧑‍🦯 Accessibility First**: Designed with vision-impaired users in mind, providing real-time environmental understanding
 - **📱 Universal Access**: Works on any modern smartphone through the browser—no app store required
@@ -68,8 +68,8 @@ Llama Astra is a revolutionary **Progressive Web App (PWA)** that transforms you
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/llamaAstra.git
-   cd llamaAstra
+   git clone https://github.com/Nightshade14/ai_vision.git
+   cd ai_vision
    ```
 
 2. **Install dependencies**
@@ -205,8 +205,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Contact & Support
 
-- **Issues**: [GitHub Issues](https://github.com/Nightshade14/llamaAstra/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Nightshade14/llamaAstra/discussions)
+- **Issues**: [GitHub Issues](https://github.com/Nightshade14/ai_vision/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Nightshade14/ai_vision/discussions)
 - **Email**: [satyamchatrola14@gmail.com](mailto:satyamchatrola14@gmail.com)
 
 ---
